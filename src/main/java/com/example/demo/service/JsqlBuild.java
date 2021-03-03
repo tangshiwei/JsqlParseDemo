@@ -1,6 +1,9 @@
 package com.huawei.it.jsqlparse.build;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import com.huawei.it.jsqlparse.bean.*;
+import jdk.nashorn.internal.objects.annotations.Where;
 import net.sf.jsqlparser.expression.*;
 import net.sf.jsqlparser.expression.operators.conditional.AndExpression;
 import net.sf.jsqlparser.expression.operators.conditional.OrExpression;
@@ -13,12 +16,15 @@ import org.springframework.stereotype.Component;
 
 import java.sql.Date;
 import java.sql.Time;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
 @Component
 public class BuildSelectService {
+    private static SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+    private static Gson gson = new GsonBuilder().disableHtmlEscaping().create();
     private PlainSelect plainSelect;
 
     private void init() {
@@ -78,19 +84,6 @@ public class BuildSelectService {
         return this;
     }
 
-    //    //条件
-//    EqualsTo leftEqualsTo = new EqualsTo();
-//        leftEqualsTo.setLeftExpression(new Column(table, "f1"));
-//    StringValue stringValue = new StringValue("1222121");
-//        leftEqualsTo.setRightExpression(stringValue);
-//        plainSelect.setWhere(leftEqualsTo);
-//
-//    EqualsTo rightEqualsTo = new EqualsTo();
-//        rightEqualsTo.setLeftExpression(new Column(table, "f2"));
-//    StringValue stringValue1 = new StringValue("122212111111");
-//        rightEqualsTo.setRightExpression(stringValue1);
-//    OrExpression orExpression = new OrExpression(leftEqualsTo, rightEqualsTo);
-//        plainSelect.setWhere(orExpression);
     // 构建Where
     public BuildSelectService buildWhere(WhereBean whereBean) {
         init();
@@ -103,14 +96,14 @@ public class BuildSelectService {
             //操作符：=, >, >=, <, <=, <>
             String operator = joinOn.getOperator();
 
-            Expression expression = null;
+            Expression expression = getExpression(joinOn);
             plainSelect.setWhere(expression);
         }
-
         return this;
     }
 
-    private Expression getColumnLeftExpression(JoinOn joinOn) {
+    private Column getLeftExpression(JoinOn joinOn) {
+        //类型：Column(t.id)
         Table table = new Table();
         table.setName(joinOn.getLeftTableAlias());
         Column column = new Column();
@@ -118,19 +111,11 @@ public class BuildSelectService {
         column.setColumnName(joinOn.getLeftColumnName());
         return column;
     }
-    private Expression getColumnRightExpression(JoinOn joinOn) {
-        Table table = new Table();
-        table.setName(joinOn.getRightTableAlias());
-        Column column = new Column();
-        column.setTable(table);
-        column.setColumnName(joinOn.getRightColumnName());
-        return column;
-    }
+
     private Expression getRightExpression(JoinOn joinOn) {
-        String rightTableAlias = joinOn.getRightTableAlias();
-        String rightColumnName = joinOn.getRightColumnName();
+        //类型：Column/StringValue,LongValue,DateValue等
         Object value = joinOn.getValue();
-        //1.t.id=10
+        //1.常量值：t.id=10
         if (value != null) {
             if (value instanceof String) {
                 return new StringValue(value.toString());
@@ -149,60 +134,98 @@ public class BuildSelectService {
             }
             return null;
         }
-        //2. t.id=t2.user_id
+        //2.表达式： t.id=t2.user_id
+        Expression rightExpression = getRightColumn(joinOn);
 
-        Expression expression = getColumnRightExpression(joinOn);
-        return expression;
+        return rightExpression;
+    }
+
+    private Column getRightColumn(JoinOn joinOn) {
+        Table table = new Table();
+        table.setName(joinOn.getRightTableAlias());
+        Column column = new Column();
+        column.setTable(table);
+        column.setColumnName(joinOn.getRightColumnName());
+        return column;
     }
 
     private Expression getExpression(JoinOn joinOn) {
         String operator = joinOn.getOperator();
+        Object value = joinOn.getValue();
         if ("=".equals(operator)) {
-            EqualsTo leftEqualsTo = new EqualsTo();
-            leftEqualsTo.setLeftExpression(getColumnLeftExpression(joinOn));
-            leftEqualsTo.setRightExpression(getColumnRightExpression(joinOn));
-
-
+            EqualsTo expression = new EqualsTo();
+            expression.setLeftExpression(getLeftExpression(joinOn));
+            expression.setRightExpression(getRightExpression(joinOn));
+            return expression;
         } else if (">".equals(operator)) {
             GreaterThan expression = new GreaterThan();
-
+            expression.setLeftExpression(getLeftExpression(joinOn));
+            expression.setRightExpression(getRightColumn(joinOn));
+            return expression;
         } else if (">=".equals(operator)) {
             GreaterThanEquals expression = new GreaterThanEquals();
-
+            expression.setLeftExpression(getLeftExpression(joinOn));
+            expression.setRightExpression(getRightExpression(joinOn));
+            return expression;
         } else if ("<".equals(operator)) {
             MinorThan expression = new MinorThan();
-
+            expression.setLeftExpression(getLeftExpression(joinOn));
+            expression.setRightExpression(getRightExpression(joinOn));
+            return expression;
         } else if ("<=".equals(operator)) {
             MinorThanEquals expression = new MinorThanEquals();
-
+            expression.setLeftExpression(getLeftExpression(joinOn));
+            expression.setRightExpression(getRightExpression(joinOn));
+            return expression;
         } else if ("AND".equalsIgnoreCase(operator)) {
             AndExpression expression = new AndExpression();
-
+            expression.setLeftExpression(getLeftExpression(joinOn));
+            expression.setRightExpression(getRightExpression(joinOn));
+            return expression;
         } else if ("OR".equalsIgnoreCase(operator)) {
             OrExpression expression = new OrExpression();
+            expression.setLeftExpression(getLeftExpression(joinOn));
+            expression.setRightExpression(getRightExpression(joinOn));
+            return expression;
 
         } else if ("LIKE".equalsIgnoreCase(operator)) {
             LikeExpression expression = new LikeExpression();
-
+            expression.setLeftExpression(getLeftExpression(joinOn));
+            expression.setRightExpression(getRightExpression(joinOn));
+            return expression;
         } else if ("IN".equalsIgnoreCase(operator)) {
             InExpression expression = new InExpression();
+            expression.setLeftExpression(getLeftExpression(joinOn));
+            expression.setRightExpression(getRightExpression(joinOn));
 
-
+            return expression;
         } else if ("BETWEEN".equalsIgnoreCase(operator)) {
             Between expression = new Between();
-
-
+            expression.setLeftExpression(getLeftExpression(joinOn));
+            if (value != null && StringUtils.isNotBlank(value.toString())) {
+                String[] arr = value.toString().split("@");
+                expression.setBetweenExpressionStart(new LongValue(arr[0]));
+                expression.setBetweenExpressionEnd(new LongValue(arr[1]));
+            }
+            return expression;
         } else if ("IS NULL".equalsIgnoreCase(operator) || "IS NOT NULL".equalsIgnoreCase(operator)) {
             IsNullExpression expression = new IsNullExpression();
-
+            expression.setLeftExpression(getLeftExpression(joinOn));
+            expression.setUseIsNull(operator.equals("IS NULL") ? false : true);
+            expression.setNot(operator.equals("IS NULL") ? false : true);
+            return expression;
         }
         return null;
     }
 
 
-
-
     public static void main(String[] args) {
+        String whereBeanStr="{\"joinOnList\":[{\"leftTableAlias\":\"t2\",\"leftColumnName\":\"id\",\"operator\":\"=\",\"on\":\"ON\",\"value\":6},{\"leftTableAlias\":\"t\",\"leftColumnName\":\"user_name\",\"operator\":\"=\",\"on\":\"ON\",\"value\":\"zhangsan\"},{\"leftTableAlias\":\"t\",\"leftColumnName\":\"id\",\"operator\":\"BETWEEN\",\"on\":\"AND\",\"value\":\"10@20\"}]}\n";
+        WhereBean whereBean = gson.fromJson(whereBeanStr, WhereBean.class);
+        BuildSelectService service=new BuildSelectService();
+        String s = service.buildWhere(whereBean).buildSql();
+        System.out.println(s);
+
 
     }
 

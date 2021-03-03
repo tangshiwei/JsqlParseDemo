@@ -1,15 +1,10 @@
-package com.huawei.it.parse;
+package com.huawei.it.jsqlparse.build;
 
-import com.huawei.it.parse.bean.ColumnBean;
-import com.huawei.it.parse.bean.TableBean;
-import com.huawei.it.parse.bean.TableJoinBean;
-import com.huawei.it.parse.bean.WhereBean;
+import com.huawei.it.jsqlparse.bean.*;
 import net.sf.jsqlparser.expression.*;
 import net.sf.jsqlparser.expression.operators.conditional.AndExpression;
 import net.sf.jsqlparser.expression.operators.conditional.OrExpression;
-import net.sf.jsqlparser.expression.operators.relational.EqualsTo;
-import net.sf.jsqlparser.expression.operators.relational.ExpressionList;
-import net.sf.jsqlparser.expression.operators.relational.GreaterThan;
+import net.sf.jsqlparser.expression.operators.relational.*;
 import net.sf.jsqlparser.schema.Column;
 import net.sf.jsqlparser.schema.Table;
 import net.sf.jsqlparser.statement.select.*;
@@ -17,106 +12,13 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Component;
 
 import java.sql.Date;
+import java.sql.Time;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 @Component
-public class JsqlParseBuildService {
-    public void createSelect() {
-        System.out.println("==================================================创建查询====================================================");
-        PlainSelect plainSelect = new PlainSelect();
-        //创建查询的表
-        Table table = new Table("table");
-        table.setAlias(new Alias("t"));
-        plainSelect.setFromItem(table);
-        //创建查询的列
-        List<String> selectColumnsStr = Arrays.asList("f1", "f2");
-
-        List<SelectItem> expressionItemList = selectColumnsStr.stream().map(item -> {
-            SelectExpressionItem selectExpressionItem = new SelectExpressionItem();
-            selectExpressionItem.setExpression(new Column(table, item));
-            return (SelectItem) selectExpressionItem;
-        }).collect(Collectors.toList());
-
-        SelectExpressionItem selectExpressionItem = new SelectExpressionItem();
-        selectExpressionItem.setAlias(new Alias("count"));
-        Function function = new Function();
-        function.setName("count");
-        ExpressionList expressionList = new ExpressionList();
-        expressionList.setExpressions(Arrays.asList(new Column(table, "f1")));
-        function.setParameters(expressionList);
-        selectExpressionItem.setExpression(function);
-        expressionItemList.add(selectExpressionItem);
-
-        plainSelect.setSelectItems(expressionItemList);
-
-        AtomicInteger atomicInteger = new AtomicInteger(1);
-        List<Join> joinList = Stream.of(new String[2]).map(item -> {
-            Join join = new Join();
-            join.setLeft(true);
-            Table joinTable = new Table();
-            joinTable.setName("table" + atomicInteger.incrementAndGet());
-            joinTable.setAlias(new Alias("t" + atomicInteger.get()));
-            join.setRightItem(joinTable);
-            EqualsTo equalsTo = new EqualsTo();
-            equalsTo.setLeftExpression(new Column(table, "f1"));
-            equalsTo.setRightExpression(new Column(joinTable, "f2"));
-            join.setOnExpression(equalsTo);
-            return join;
-        }).collect(Collectors.toList());
-        plainSelect.setJoins(joinList);
-
-
-        //条件
-        EqualsTo leftEqualsTo = new EqualsTo();
-        leftEqualsTo.setLeftExpression(new Column(table, "f1"));
-        StringValue stringValue = new StringValue("1222121");
-        leftEqualsTo.setRightExpression(stringValue);
-        plainSelect.setWhere(leftEqualsTo);
-
-        EqualsTo rightEqualsTo = new EqualsTo();
-        rightEqualsTo.setLeftExpression(new Column(table, "f2"));
-        StringValue stringValue1 = new StringValue("122212111111");
-        rightEqualsTo.setRightExpression(stringValue1);
-        OrExpression orExpression = new OrExpression(leftEqualsTo, rightEqualsTo);
-        plainSelect.setWhere(orExpression);
-
-        //分组
-        GroupByElement groupByElement = new GroupByElement();
-        groupByElement.setGroupByExpressions(Arrays.asList(new Column(table, "f1")));
-        plainSelect.setGroupByElement(groupByElement);
-        System.out.println(plainSelect);
-
-        //排序
-        OrderByElement orderByElement = new OrderByElement();
-        orderByElement.setAsc(true);
-        orderByElement.setExpression(new Column(table, "f1"));
-        OrderByElement orderByElement1 = new OrderByElement();
-        orderByElement1.setAsc(false);
-        orderByElement1.setExpression(new Column(table, "f2"));
-
-        //分页
-        Limit limit = new Limit();
-        limit.setRowCount(new LongValue(2));
-        limit.setOffset(new LongValue(10));
-        plainSelect.setLimit(limit);
-        plainSelect.setOrderByElements(Arrays.asList(orderByElement, orderByElement1));
-        System.out.println(plainSelect.toString());
-
-        String sql = "SELECT t.f1, t.f2, count(t.f1) AS count " +
-                "FROM table AS t " +
-                "LEFT JOIN table2 AS t2 ON t.f1 = t2.f2 " +
-                "LEFT JOIN table3 AS t3 ON t.f1 = t3.f2 " +
-                "WHERE t.f1 = '1222121' OR t.f2 = '122212111111' " +
-                "GROUP BY t.f1 " +
-                "ORDER BY t.f1, t.f2 DESC " +
-                "LIMIT 10, 2\n";
-    }
-
+public class BuildSelectService {
     private PlainSelect plainSelect;
 
     private void init() {
@@ -125,7 +27,7 @@ public class JsqlParseBuildService {
     }
 
     // 构建主表
-    public JsqlParseBuildService buildFrom(TableBean main) {
+    public BuildSelectService buildFrom(TableBean main) {
         init();
         plainSelect = new PlainSelect();
         Table mainTable = getTable(main);
@@ -134,7 +36,7 @@ public class JsqlParseBuildService {
     }
 
     // 构建select
-    public JsqlParseBuildService buildSelect(List<ColumnBean> columnList) {
+    public BuildSelectService buildSelect(List<ColumnBean> columnList) {
         init();
         //创建查询的列
         List<SelectItem> selectItemList = new ArrayList<>();
@@ -153,7 +55,7 @@ public class JsqlParseBuildService {
     }
 
     // 构建Join
-    public JsqlParseBuildService buildTableJoin(List<TableJoinBean> tableJoinBeanList) {
+    public BuildSelectService buildTableJoin(List<TableJoinBean> tableJoinBeanList) {
         List<Join> joinList = new ArrayList<>();
         tableJoinBeanList.forEach(tableJoin -> {
             //join
@@ -176,42 +78,136 @@ public class JsqlParseBuildService {
         return this;
     }
 
+    //    //条件
+//    EqualsTo leftEqualsTo = new EqualsTo();
+//        leftEqualsTo.setLeftExpression(new Column(table, "f1"));
+//    StringValue stringValue = new StringValue("1222121");
+//        leftEqualsTo.setRightExpression(stringValue);
+//        plainSelect.setWhere(leftEqualsTo);
+//
+//    EqualsTo rightEqualsTo = new EqualsTo();
+//        rightEqualsTo.setLeftExpression(new Column(table, "f2"));
+//    StringValue stringValue1 = new StringValue("122212111111");
+//        rightEqualsTo.setRightExpression(stringValue1);
+//    OrExpression orExpression = new OrExpression(leftEqualsTo, rightEqualsTo);
+//        plainSelect.setWhere(orExpression);
     // 构建Where
-    public JsqlParseBuildService buildWhere(List<WhereBean> whereBeanList) {
+    public BuildSelectService buildWhere(WhereBean whereBean) {
         init();
-        EqualsTo firstEqualsTo = null;
-        for (int i = 0; i < whereBeanList.size(); i++) {
-            WhereBean where = whereBeanList.get(i);
-            EqualsTo rightEqualsTo = new EqualsTo();
-            rightEqualsTo.setLeftExpression(new Column(getTable(where.getTable()), where.getColumnName()));
-            Expression valueExpression = null;
-            Object value = where.getValue();
-            if (value instanceof String) {
-                valueExpression = new StringValue(value.toString());
-            } else {
-                valueExpression = new LongValue(Long.valueOf(value.toString()));
-            }
-            rightEqualsTo.setRightExpression(valueExpression);
-            if (i == 0) {
-                firstEqualsTo = rightEqualsTo;
-            }
-            BinaryExpression binaryExpression = null;
-            //OR
-            if (where.isOr()) {
-                binaryExpression = new OrExpression(firstEqualsTo, rightEqualsTo);
-            }
-            // AND
-            else {
-                binaryExpression = new AndExpression(firstEqualsTo, rightEqualsTo);
-            }
-            plainSelect.setWhere(binaryExpression);
+        List<JoinOn> joinOnList = whereBean.getJoinOnList();
+        for (JoinOn joinOn : joinOnList) {
+            //连接符：(on, and ,or)
+            String on = joinOn.getOn();
+            String tableAlias = joinOn.getLeftTableAlias();
+            String leftColumnName = joinOn.getLeftColumnName();
+            //操作符：=, >, >=, <, <=, <>
+            String operator = joinOn.getOperator();
+
+            Expression expression = null;
+            plainSelect.setWhere(expression);
         }
 
         return this;
     }
 
+    private Expression getColumnLeftExpression(JoinOn joinOn) {
+        Table table = new Table();
+        table.setName(joinOn.getLeftTableAlias());
+        Column column = new Column();
+        column.setTable(table);
+        column.setColumnName(joinOn.getLeftColumnName());
+        return column;
+    }
+    private Expression getColumnRightExpression(JoinOn joinOn) {
+        Table table = new Table();
+        table.setName(joinOn.getRightTableAlias());
+        Column column = new Column();
+        column.setTable(table);
+        column.setColumnName(joinOn.getRightColumnName());
+        return column;
+    }
+    private Expression getRightExpression(JoinOn joinOn) {
+        String rightTableAlias = joinOn.getRightTableAlias();
+        String rightColumnName = joinOn.getRightColumnName();
+        Object value = joinOn.getValue();
+        //1.t.id=10
+        if (value != null) {
+            if (value instanceof String) {
+                return new StringValue(value.toString());
+            }
+            if (value instanceof Long) {
+                return new LongValue(value.toString());
+            }
+            if (value instanceof Double) {
+                return new DoubleValue(value.toString());
+            }
+            if (value instanceof Date) {
+                return new DateValue(value.toString());
+            }
+            if (value instanceof Time) {
+                return new TimeValue(value.toString());
+            }
+            return null;
+        }
+        //2. t.id=t2.user_id
+
+        Expression expression = getColumnRightExpression(joinOn);
+        return expression;
+    }
+
+    private Expression getExpression(JoinOn joinOn) {
+        String operator = joinOn.getOperator();
+        if ("=".equals(operator)) {
+            EqualsTo leftEqualsTo = new EqualsTo();
+            leftEqualsTo.setLeftExpression(getColumnLeftExpression(joinOn));
+            leftEqualsTo.setRightExpression(getColumnRightExpression(joinOn));
+
+
+        } else if (">".equals(operator)) {
+            GreaterThan expression = new GreaterThan();
+
+        } else if (">=".equals(operator)) {
+            GreaterThanEquals expression = new GreaterThanEquals();
+
+        } else if ("<".equals(operator)) {
+            MinorThan expression = new MinorThan();
+
+        } else if ("<=".equals(operator)) {
+            MinorThanEquals expression = new MinorThanEquals();
+
+        } else if ("AND".equalsIgnoreCase(operator)) {
+            AndExpression expression = new AndExpression();
+
+        } else if ("OR".equalsIgnoreCase(operator)) {
+            OrExpression expression = new OrExpression();
+
+        } else if ("LIKE".equalsIgnoreCase(operator)) {
+            LikeExpression expression = new LikeExpression();
+
+        } else if ("IN".equalsIgnoreCase(operator)) {
+            InExpression expression = new InExpression();
+
+
+        } else if ("BETWEEN".equalsIgnoreCase(operator)) {
+            Between expression = new Between();
+
+
+        } else if ("IS NULL".equalsIgnoreCase(operator) || "IS NOT NULL".equalsIgnoreCase(operator)) {
+            IsNullExpression expression = new IsNullExpression();
+
+        }
+        return null;
+    }
+
+
+
+
+    public static void main(String[] args) {
+
+    }
+
     // 构建groupby
-    public JsqlParseBuildService buildGroupby(List<ColumnBean> columnList) {
+    public BuildSelectService buildGroupby(List<ColumnBean> columnList) {
         init();
         List<Expression> groupByExpressions = new ArrayList<>();
         columnList.forEach(column -> {
@@ -225,7 +221,7 @@ public class JsqlParseBuildService {
     }
 
     // 构建orderby
-    public JsqlParseBuildService buildOrderby(List<ColumnBean> columnList) {
+    public BuildSelectService buildOrderby(List<ColumnBean> columnList) {
         init();
         List<OrderByElement> orderByElements = new ArrayList<>();
         columnList.forEach(column -> {
@@ -239,7 +235,7 @@ public class JsqlParseBuildService {
     }
 
     // 构建分页Limit
-    public JsqlParseBuildService buildLimit(int pageIndex, int pageSize) {
+    public BuildSelectService buildLimit(int pageIndex, int pageSize) {
         init();
         Limit limit = new Limit();
         int index = (pageIndex - 1) * pageSize;
@@ -256,8 +252,8 @@ public class JsqlParseBuildService {
         return sql;
     }
 
-    public static void main(String[] args) {
-        JsqlParseBuildService service = new JsqlParseBuildService();
+    public static void main222(String[] args) {
+        BuildSelectService service = new BuildSelectService();
 
         TableBean main = new TableBean("table", "t");
         List<ColumnBean> columnBeanList = new ArrayList<>();
@@ -283,35 +279,33 @@ public class JsqlParseBuildService {
         tableBean4 = new TableBean("table3", "t3");
         joinBean = new TableJoinBean(tableBean3, tableBean4, "id2", "id3");
         tableJoinBeanList.add(joinBean);
-        //where
-        List<WhereBean> whereBeanList = new ArrayList<>();
-        TableBean table = new TableBean("table", "t");
-        WhereBean whereBean = new WhereBean(table, "id", "=", 123);
-        whereBeanList.add(whereBean);
-        //
-        table = new TableBean("table", "t");
-        whereBean = new WhereBean(table, "id", "<", 10);
-        //whereBean.setOr(true);
-        whereBeanList.add(whereBean);
+//        //where
+//        List<WhereBean> whereBeanList = new ArrayList<>();
+//        TableBean table = new TableBean("table", "t");
+//        WhereBean whereBean = new WhereBean(table, "id", "=", 123);
+//        whereBeanList.add(whereBean);
+//        //
+//        table = new TableBean("table", "t");
+//        whereBean = new WhereBean(table, "id", "<", 10);
+//        //whereBean.setOr(true);
+//        whereBeanList.add(whereBean);
         //groupby
         List<ColumnBean> groupbyList = new ArrayList<>();
-        groupbyList.add(new ColumnBean(table, "name"));
+        groupbyList.add(new ColumnBean(tableBean3, "name"));
         groupbyList.add(new ColumnBean(tableBean3, "name3"));
         //orderby
         List<ColumnBean> orderbyList = new ArrayList<>();
-        orderbyList.add(new ColumnBean(table, "age"));
+        orderbyList.add(new ColumnBean(tableBean3, "age"));
         orderbyList.add(new ColumnBean(tableBean3, "address"));
 
         service.buildFrom(main)
                 .buildSelect(columnBeanList)
                 .buildTableJoin(tableJoinBeanList)
-                .buildWhere(whereBeanList)
+                //.buildWhere(whereBeanList)
                 .buildGroupby(groupbyList)
                 .buildOrderby(orderbyList)
                 .buildLimit(1, 10)
                 .buildSql();
-
-        service.createSelect();
 
         String sql = "SELECT t.f_name AS name, COUNT(t.f_age) AS age " +
                 "FROM table AS t " +

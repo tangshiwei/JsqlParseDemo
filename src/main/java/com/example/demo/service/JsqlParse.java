@@ -1,8 +1,8 @@
-package com.huawei.it.jsqlparse.parse;
+package com.demo.it.jsqlparse.parse;
 
+import com.demo.it.jsqlparse.bean.*;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import com.huawei.it.jsqlparse.bean.*;
 import net.sf.jsqlparser.JSQLParserException;
 import net.sf.jsqlparser.expression.*;
 import net.sf.jsqlparser.expression.operators.conditional.AndExpression;
@@ -27,60 +27,42 @@ import java.util.List;
 public class ParseSelectService {
     private static SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
     private static Gson gson = new GsonBuilder().disableHtmlEscaping().create();
+    private SqlBean sqlBean;
+    private String sql;
 
-    public static void main(String[] args) throws JSQLParserException {
-        ParseSelectService service = new ParseSelectService();
-        String sql = "SELECT " +
-                "t2.class_name className,\n" +
-                "t.user_name as userName,\n" +
-                "ui.phone,\n" +
-                "ui.address,\n" +
-                "(select u.phone,u.address from t_user_info u) ui,\n" +
-                "count(t3.score) AS score\n" +
-                "FROM t_user t \n" +
-                "LEFT JOIN t_class t2 ON t2.id=t.class_id \n" +
-                "and t2.id=12 and t2.name='aa' or t2.age>20\n" +
-                "WHERE t2.id = 6 and t.user_name = 'zhangsan' \n" +
-                "GROUP BY t2.class_name,t.user_name \n" +
-                "ORDER BY t.id";
-
-        String sql2 = "SELECT t.id\n " +
-                "FROM t_user t \n" +
-                "LEFT JOIN t_user_detail t2 ON t2.user_id=t.id \n" +
-                "and t2.phone like '%zhangsan%'\n" +
-                "WHERE t2.id = 6 or t.user_name = 'zhangsan' \n" +
-                "group by t.nick,t2.address \n" +
-                "order by t.nick, t2.address desc \n" +
-                "limit 0,10";
-//        List<JoinBean> list = service.parseSelectJoin(sql2);
-//        System.out.println(gson.toJson(list));
-//        //
-//        WhereBean whereBean = service.parseSelectWhere(sql2);
-//        System.out.println(gson.toJson(whereBean));
-//        //
-//        GroupbyBean groupbyBean = service.parseSelectGroupby(sql2);
-//        System.out.println(gson.toJson(groupbyBean));
-
-        //
-        OrderbyBean orderbyBean = service.parseSelectOrderby(sql2);
-        System.out.println(gson.toJson(orderbyBean));
-        //
-        LimitBean limitBean = service.parseSelectLimit(sql2);
-        System.out.println(gson.toJson(limitBean));
-
-        System.out.println();
+    /**
+     * SQL解析
+     */
+    public SqlBean parse(String sql) {
+        this.sql = sql;
+        sqlBean = new SqlBean();
+        try {
+            parseSelectTable()
+                    .parseSelectColumn()
+                    .parseSelectJoin()
+                    .parseSelectWhere()
+                    .parseSelectGroupby()
+                    .parseSelectOrderby()
+                    .parseSelectLimit();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return sqlBean;
     }
 
     /**
      * 解析查询字段
      */
-    public List<ColumnBean> parseSelectColumn(String sql) throws JSQLParserException {
+    public ParseSelectService parseSelectColumn() throws JSQLParserException {
+        if (sql == null) {
+            return this;
+        }
         CCJSqlParserManager parserManager = new CCJSqlParserManager();
         Select select = (Select) parserManager.parse(new StringReader(sql));
         PlainSelect plain = (PlainSelect) select.getSelectBody();
         List<SelectItem> selectItemList = plain.getSelectItems();
         if (selectItemList == null || selectItemList.size() == 0) {
-            return null;
+            return this;
         }
         List<ColumnBean> columnBeanList = new ArrayList<>();
         selectItemList.forEach(item -> {
@@ -104,7 +86,6 @@ public class ParseSelectService {
                 if (column.getTable() != null) {
                     tableAlias = column.getTable().getName();
                 }
-                System.out.println(column);
             }
             //函数字段
             else if (expression instanceof Function) {
@@ -118,7 +99,6 @@ public class ParseSelectService {
                     if (column.getTable() != null) {
                         tableAlias = column.getTable().getName();
                     }
-                    System.out.println(function);
                 }
             }
             //子查询
@@ -127,25 +107,29 @@ public class ParseSelectService {
                 columnName = subSelect.toString();
                 //去掉子查询两边的()
                 // columnName = subSelect.getSelectBody().toString();
-                System.out.println(expression);
             }
             ColumnBean columnBean = new ColumnBean();
             columnBean.setColumnName(columnName);
             columnBean.setColumnAlis(columnAlias);
             columnBean.setFunctionName(functionName);
-            columnBean.setTableBean(new TableBean(null, tableAlias));
+            columnBean.setTableName(null);
+            columnBean.setTableAlias(tableAlias);
             columnBeanList.add(columnBean);
         });
 
-        return columnBeanList;
+        sqlBean.setColumnBeanList(columnBeanList);
+        return this;
     }
 
     /**
      * 获取表信息
      */
-    public List<TableBean> parseSelectTable(String sql) throws JSQLParserException {
-        List<TableBean> list = new ArrayList<>();
-        Statement statement = (Statement) CCJSqlParserUtil.parse(sql);
+    public ParseSelectService parseSelectTable() throws JSQLParserException {
+        if (sql == null) {
+            return this;
+        }
+        List<TableBean> tableBeanList = new ArrayList<>();
+        Statement statement = CCJSqlParserUtil.parse(sql);
         Select select = (Select) statement;
         PlainSelect plainSelect = (PlainSelect) select.getSelectBody();
         //表名称
@@ -161,7 +145,7 @@ public class ParseSelectService {
                 tableAlias = table.getAlias().getName();
             }
         }
-        list.add(new TableBean(tableName, tableAlias));
+        tableBeanList.add(new TableBean(tableName, tableAlias));
         //获取连接表
         List<Join> joins = plainSelect.getJoins();
         if (joins != null && joins.size() > 0) {
@@ -173,24 +157,28 @@ public class ParseSelectService {
                     if (table.getAlias() != null) {
                         tableAlias = table.getAlias().getName();
                     }
-                    list.add(new TableBean(tableName, tableAlias));
+                    tableBeanList.add(new TableBean(tableName, tableAlias));
                 }
             }
         }
-        return list;
+        sqlBean.setTableBeanList(tableBeanList);
+        return this;
     }
 
     /**
      * 获取JOIN信息
      */
-    public List<JoinBean> parseSelectJoin(String sql) throws JSQLParserException {
-        List<JoinBean> list = new ArrayList<>();
+    public ParseSelectService parseSelectJoin() throws JSQLParserException {
+        if (sql == null) {
+            return this;
+        }
+        List<JoinBean> joinBeanList = new ArrayList<>();
         Statement statement = CCJSqlParserUtil.parse(sql);
         Select selectStatement = (Select) statement;
         PlainSelect plain = (PlainSelect) selectStatement.getSelectBody();
         List<Join> joins = plain.getJoins();
         if (joins == null || joins.size() == 0) {
-            return null;
+            return this;
         }
         for (Join join : joins) {
             JoinBean joinBean = new JoinBean();
@@ -212,15 +200,19 @@ public class ParseSelectService {
             joinBean.setJoinType(getJoinType(join));
             joinBean.setTableBean(joinTable);
             joinBean.setJoinOnList(joinOnList);
-            list.add(joinBean);
+            joinBeanList.add(joinBean);
         }
-        return list;
+        sqlBean.setJoinBeanList(joinBeanList);
+        return this;
     }
 
     /**
      * 获取WHERE信息
      */
-    public WhereBean parseSelectWhere(String sql) throws JSQLParserException {
+    public ParseSelectService parseSelectWhere() throws JSQLParserException {
+        if (sql == null) {
+            return this;
+        }
         WhereBean whereBean = new WhereBean();
         Statement statement = CCJSqlParserUtil.parse(sql);
         Select selectStatement = (Select) statement;
@@ -228,20 +220,24 @@ public class ParseSelectService {
         Expression where = plain.getWhere();
         List<JoinOn> joinOnList = parseExpression(where, "");
         whereBean.setJoinOnList(joinOnList);
-        return whereBean;
+        sqlBean.setWhereBean(whereBean);
+        return this;
     }
 
     /**
      * 获取GROUP BY信息
      */
-    public GroupbyBean parseSelectGroupby(String sql) throws JSQLParserException {
+    public ParseSelectService parseSelectGroupby() throws JSQLParserException {
+        if (sql == null) {
+            return this;
+        }
         Statement statement = CCJSqlParserUtil.parse(sql);
         Select selectStatement = (Select) statement;
         PlainSelect plain = (PlainSelect) selectStatement.getSelectBody();
         GroupByElement groupBy = plain.getGroupBy();
         List<Expression> groupByExpressions = groupBy.getGroupByExpressions();
         if (groupByExpressions == null || groupByExpressions.size() == 0) {
-            return null;
+            return this;
         }
         GroupbyBean groupbyBean = new GroupbyBean();
         List<ColumnItem> columnItemList = new ArrayList<>();
@@ -252,19 +248,23 @@ public class ParseSelectService {
                 columnItemList.add(columnItem);
             }
         }
-        return groupbyBean;
+        sqlBean.setGroupbyBean(groupbyBean);
+        return this;
     }
 
     /**
      * 获取ORDER BY信息
      */
-    public OrderbyBean parseSelectOrderby(String sql) throws JSQLParserException {
+    public ParseSelectService parseSelectOrderby() throws JSQLParserException {
+        if (sql == null) {
+            return this;
+        }
         Statement statement = CCJSqlParserUtil.parse(sql);
         Select selectStatement = (Select) statement;
         PlainSelect plain = (PlainSelect) selectStatement.getSelectBody();
         List<OrderByElement> orderByElements = plain.getOrderByElements();
         if (orderByElements == null || orderByElements.size() == 0) {
-            return null;
+            return this;
         }
         OrderbyBean orderbyBean = new OrderbyBean();
         List<ColumnItem> columnItemList = new ArrayList<>();
@@ -278,24 +278,32 @@ public class ParseSelectService {
                 columnItemList.add(columnItem);
             }
         }
-        return orderbyBean;
+        sqlBean.setOrderbyBean(orderbyBean);
+        return this;
     }
 
     /**
      * 获取ORDER BY信息
      */
-    public LimitBean parseSelectLimit(String sql) throws JSQLParserException {
+    public ParseSelectService parseSelectLimit() throws JSQLParserException {
+        if (sql == null) {
+            return this;
+        }
         Statement statement = CCJSqlParserUtil.parse(sql);
         Select selectStatement = (Select) statement;
         PlainSelect plain = (PlainSelect) selectStatement.getSelectBody();
         Limit limit = plain.getLimit();
-        Expression offset = limit.getOffset();
-        Expression rowCount = limit.getRowCount();
-        long pageIndex = (long) getRightExpressionValue(offset);
-        long pageSize = (long) getRightExpressionValue(rowCount);
-        LimitBean limitBean = new LimitBean(pageIndex, pageSize);
-        return limitBean;
+        if (limit != null) {
+            Expression offset = limit.getOffset();
+            Expression rowCount = limit.getRowCount();
+            long pageIndex = (long) getRightExpressionValue(offset);
+            long pageSize = (long) getRightExpressionValue(rowCount);
+            LimitBean limitBean = new LimitBean(pageIndex, pageSize);
+            sqlBean.setLimitBean(limitBean);
+        }
+        return this;
     }
+
 
     private ColumnItem getLeftExpressionValue(Expression expression) {
         String tableAlias = null;
@@ -322,7 +330,7 @@ public class ParseSelectService {
             operator = equalsTo.getStringExpression();
             //Column
             Expression leftExpression = equalsTo.getLeftExpression();
-            //Column/StringValue,LongValue等
+            //Column/StringValue,LongValue,DateValue等
             Expression rightExpression = equalsTo.getRightExpression();
             ColumnItem leftValue = getLeftExpressionValue(leftExpression);
             JoinOn joinOn = null;
@@ -334,8 +342,6 @@ public class ParseSelectService {
                 joinOn = new JoinOn(on, leftValue, operator, value);
             }
             joinOnList.add(joinOn);
-
-            System.out.println();
         }
         // AndExpression: and
         else if (onExpression instanceof AndExpression) {
@@ -347,7 +353,6 @@ public class ParseSelectService {
             List<JoinOn> rightList = parseExpression(rightExpression, operator);
             joinOnList.addAll(leftList);
             joinOnList.addAll(rightList);
-            System.out.println();
         }
         //OrExpression： or
         else if (onExpression instanceof OrExpression) {
@@ -359,7 +364,6 @@ public class ParseSelectService {
             List<JoinOn> rightList = parseExpression(rightExpression, operator);
             joinOnList.addAll(leftList);
             joinOnList.addAll(rightList);
-            System.out.println();
         }
         //Between： between and
         else if (onExpression instanceof Between) {
@@ -371,9 +375,9 @@ public class ParseSelectService {
             ColumnItem leftValue = getLeftExpressionValue(leftExpression);
             Object startValue = getRightExpressionValue(betweenExpressionStart);
             Object endValue = getRightExpressionValue(betweenExpressionEnd);
-            JoinOn joinOn = new JoinOn(on, leftValue, "between", startValue + "@" + endValue);
+            JoinOn joinOn = new JoinOn(on, leftValue, "BETWEEN", startValue + "@" + endValue);
             joinOnList.add(joinOn);
-            System.out.println();
+
         }
         //LikeExpression: LIKE
         else if (onExpression instanceof LikeExpression) {
@@ -386,7 +390,7 @@ public class ParseSelectService {
             Object value = getRightExpressionValue(rightExpression);
             JoinOn joinOn = new JoinOn(on, leftValue, operator, value);
             joinOnList.add(joinOn);
-            System.out.println();
+
         }
         //InExpression: IN
         else if (onExpression instanceof InExpression) {
@@ -403,7 +407,6 @@ public class ParseSelectService {
             JoinOn joinOn = new JoinOn(on, leftValue, operator, value);
             joinOnList.add(joinOn);
 
-            System.out.println();
         }
         //GreaterThan: >
         else if (onExpression instanceof GreaterThan) {
@@ -416,7 +419,7 @@ public class ParseSelectService {
             Object value = getRightExpressionValue(rightExpression);
             JoinOn joinOn = new JoinOn(on, leftValue, operator, value);
             joinOnList.add(joinOn);
-            System.out.println();
+
         }
         //GreaterThanEquals: >=
         else if (onExpression instanceof GreaterThanEquals) {
@@ -429,7 +432,7 @@ public class ParseSelectService {
             Object value = getRightExpressionValue(rightExpression);
             JoinOn joinOn = new JoinOn(on, leftValue, operator, value);
             joinOnList.add(joinOn);
-            System.out.println();
+
         }
         //MinorThan: <
         else if (onExpression instanceof MinorThan) {
@@ -442,7 +445,7 @@ public class ParseSelectService {
             Object value = getRightExpressionValue(rightExpression);
             JoinOn joinOn = new JoinOn(on, leftValue, operator, value);
             joinOnList.add(joinOn);
-            System.out.println();
+
         }
         //MinorThanEquals: <=
         else if (onExpression instanceof MinorThanEquals) {
@@ -455,7 +458,7 @@ public class ParseSelectService {
             Object value = getRightExpressionValue(rightExpression);
             JoinOn joinOn = new JoinOn(on, leftValue, operator, value);
             joinOnList.add(joinOn);
-            System.out.println();
+
         }
 
         //IsNullExpression: IS NULL/IS NOT NULL
@@ -469,7 +472,6 @@ public class ParseSelectService {
             JoinOn joinOn = new JoinOn(on, leftValue, operator, "");
             joinOnList.add(joinOn);
 
-            System.out.println();
         }
         //SimilarToExpression: SIMILAR TO
         else if (onExpression instanceof SimilarToExpression) {
@@ -478,7 +480,6 @@ public class ParseSelectService {
             Expression leftExpression = similarTo.getLeftExpression();
             Expression rightExpression = similarTo.getRightExpression();
 
-            System.out.println();
         }
         return joinOnList;
     }
@@ -518,5 +519,37 @@ public class ParseSelectService {
             return "RIGHT JOIN";
         }
         return "INNER JOIN";
+    }
+
+
+    public static void main(String[] args) throws JSQLParserException {
+        ParseSelectService service = new ParseSelectService();
+        String sql = "SELECT " +
+                "t2.class_name className,\n" +
+                "t.user_name as userName,\n" +
+                "ui.phone,\n" +
+                "ui.address,\n" +
+                "(select u.phone,u.address from t_user_info u) ui,\n" +
+                "count(t3.score) AS score\n" +
+                "FROM t_user t \n" +
+                "LEFT JOIN t_class t2 ON t2.id=t.class_id \n" +
+                "and t2.id=12 and t2.name='aa' or t2.age>20\n" +
+                "WHERE t2.user_id = t.id and t.user_name = 'zhangsan' \n" +
+                "GROUP BY t2.class_name,t.user_name \n" +
+                "ORDER BY t.id";
+
+        String sql2 = "SELECT t.id\n " +
+                "FROM t_user t \n" +
+                "LEFT JOIN t_user_detail t2 ON t2.user_id=t.id \n" +
+                "and t2.phone like '%zhangsan%'\n" +
+                "WHERE t2.id = 6 or t.user_name = 'zhangsan' and t.id between 10 and 20\n" +
+                "group by t.nick,t2.address \n" +
+                "order by t.nick, t2.address desc \n" +
+                "limit 0,10";
+
+        SqlBean sqlBean = service.parse(sql);
+        System.out.println(gson.toJson(sqlBean));
+
+        System.out.println();
     }
 }
